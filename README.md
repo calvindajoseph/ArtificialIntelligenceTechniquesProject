@@ -1,0 +1,2 @@
+# ArtificialIntelligenceTechniquesProject
+Artificial Intelligence Project
