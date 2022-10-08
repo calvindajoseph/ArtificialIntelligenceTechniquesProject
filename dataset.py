@@ -206,6 +206,7 @@ class TextDataset:
         text = re.sub('n t ', ' not ', text)
         text = re.sub('^it s ', 'it is ', text)
         text = re.sub(' it s ', ' it is ', text)
+        text = re.sub('theyre', 'they are', text)
         return text
         
     
@@ -280,7 +281,11 @@ class TextDataset:
             self.texts = [phrases_mod[doc] for doc in self.texts]
             return None
     
-    def get_texts(self, source : str = 'raw', edit_abbreviation : bool = True):
+    def get_texts(
+            self,
+            source : str = 'raw',
+            edit_abbreviation : bool = True,
+            bow : bool = True):
         """
         Get either the raw text or the bag of words representation.
         
@@ -311,7 +316,16 @@ class TextDataset:
             else:
                 return self.df_data['text'].tolist()
         elif self.texts is not None and source == 'texts':
-            return self.texts
+            if bow:
+                return self.texts
+            else:
+                texts = []
+                for text in self.texts:
+                    combined = ''
+                    for word in text:
+                        combined += (word + ' ')
+                    texts.append(combined.strip())
+                return texts
         else:
             return None
     

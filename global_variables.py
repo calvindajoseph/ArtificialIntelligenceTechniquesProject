@@ -17,6 +17,7 @@ LABEL_DESCRIPTION = {
     4 : 'fear',
     5 : 'surprise'
 }
+LABELS = ['sadness', 'joy', 'love', 'anger', 'fear', 'surprise']
 
 N_GRAM_VALUES = ['unigram', 'bigram', 'trigram']
 

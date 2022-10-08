@@ -1,10 +1,17 @@
 import os
 import time
+import copy
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from collections import defaultdict
+
+from imblearn.over_sampling import SMOTE
+
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
 
 import torch
 from torch import nn
@@ -16,6 +23,245 @@ import dataset_utils
 
 from transformers import logging
 logging.set_verbosity_error()
+
+class CVClassifier():
+    """
+    Train an sklearn-like models with cross validation technique.
+    
+    Parameters
+    ----------
+    
+    classifier : sklearn - like classifier model.
+        An sklearn or similar structured model.
+        
+    n_folds : int, default = 5
+        The number of folds.
+    
+    smote : bool, default = True
+        If true, each training set in a fold will be oversampled using SMOTE
+        technique.
+    
+    Attributes
+    ---------
+    
+    fold_results : pandas.DataFrame
+        A pandas dataframe that contains accuracy and weigthed f1 score from
+        each fold.
+    
+    final_results : dict
+        A dictionary with the average accuracy and weighted f1 score, as well
+        as the standard deviation.
+    
+    y_trues : numpy.ndarray
+        List of all true labels during training. Used for confusion matrix.
+    
+    y_preds : numpy.ndarray
+        List of all predicted labels during training. Used for confusion
+        matrix.
+    
+    """
+    
+    def __init__(self, classifier, n_folds : int = 5, smote : bool = True):
+        self.classifier = classifier
+        self.n_folds = n_folds
+        if smote:
+            self._sampler = SMOTE()
+        else:
+            self._sampler = None
+        self._kfold_splitter = StratifiedKFold(n_splits=n_folds, shuffle=True)
+        self._vectorizer = None
+        self.fold_results = None
+        self.final_results = None
+        self.y_trues = []
+        self.y_preds = []
+    
+    def fit(self, X_data, y_data, tfidf_vectorizer = None):
+        """
+        Fit a data for cross validation training.
+        
+        Parameters
+        ----------
+        
+        X_data : list of str
+            A list of filtered text. Not the bag of words representation.
+        
+        y_data : numpy.ndarray or list of integers
+            A list of the labels.
+        
+        tfidf_vectorizer : sklearn.feature_extraction.text.TfidfVectorizer,
+            default = None
+            The vectorizer to be used. If None, then the method will create
+            a new vectorizer.
+        
+        """
+        # Create vectorizer.
+        if tfidf_vectorizer is None:
+            self._vectorizer = TfidfVectorizer()
+            self._vectorizer.fit(X_data)
+        else:
+            self._vectorizer = tfidf_vectorizer
+        
+        # Reset parameters.
+        self.fold_results = None
+        self.final_results = None
+        self.y_trues = []
+        self.y_preds = []
+        
+        # Make empty lists for scores.
+        accuracies = []
+        f1_scores = []
+        
+        # Models to store models.
+        models = []
+        
+        for train_index, test_index in self._kfold_splitter.split(
+                X_data, y_data):
+            
+            # Split into training and testing data.
+            X_train = [X_data[i] for i in train_index]
+            y_train = [y_data[i] for i in train_index]
+            X_test = [X_data[i] for i in test_index]
+            y_test = [y_data[i] for i in test_index]
+            
+            # TF-IDF transform.
+            X_train = self._vectorizer.transform(X_train)
+            X_test = self._vectorizer.transform(X_test)
+            
+            # Sample with SMOTE.
+            if self._sampler is not None:
+                X_train, y_train = self._sampler.fit_resample(
+                    X_train, y_train)
+            
+            # Create model.
+            clf = copy.deepcopy(self.classifier)
+            clf.fit(X_train, y_train)
+            
+            # Get prediction.
+            y_pred = clf.predict(X_test)
+            
+            # Put in y_trues and y_preds.
+            self.y_trues.extend(y_test)
+            self.y_preds.extend(y_pred)
+            
+            # Process accuracy.
+            accuracy = accuracy_score(y_test, y_pred)
+            accuracies.append(accuracy)
+            
+            # Process f1 scores.
+            f1 = f1_score(y_test, y_pred, average='weighted')
+            f1_scores.append(f1)
+            
+            # Store temporary model.
+            models.append(clf)
+        
+        # Data for dataframe.
+        data_fold_results = {
+            'accuracy' : accuracies,
+            'f1_scores' : f1_scores
+        }
+        
+        # Get the result.
+        self.fold_results = pd.DataFrame(data=data_fold_results)
+        
+        # Final result.
+        self.final_results = {
+            'mean_acc' : np.mean(accuracies),
+            'mean_f1' : np.mean(f1_scores),
+            'std_acc' : np.std(accuracies),
+            'std_f1' : np.std(f1_scores)
+        }
+        
+        # Store median model.
+        self.classifier = models[np.argsort(accuracies)[len(accuracies)//2]]
+        
+        # To numpy.
+        self.y_trues = np.ravel(self.y_trues)
+        self.y_preds = np.ravel(self.y_preds)
+    
+    def classification_report(self, y_trues = None, y_preds = None):
+        """
+        Create a classification report with precision, recall, and f1 score.
+        
+        Parameters
+        ----------
+        
+        y_trues : numpy.ndarray, default = None
+            If an array is given along with y_preds, the method will return
+            the classification report for that values. Otherwise it will use
+            the values from training.
+        
+        y_preds : numpy.ndarray, default = None
+            If an array is given along with y_trues, the method will return
+            the classification report for that values. Otherwise it will use
+            the values from training.
+        
+        Returns
+        -------
+        
+        classification_report : str
+            The classification report from sklearn.
+        
+        """
+        if y_trues is None and y_preds is None:
+            return classification_report(self.y_trues, self.y_preds)
+        else:
+            return classification_report(y_trues, y_preds)
+    
+    def confusion_matrix(
+            self, filename = None, y_trues = None, y_preds = None):
+        """
+        Create a confusione matrix.
+        
+        Parameters
+        ----------
+        
+        filename : str, default = None
+            If a string is given, the method will store the png of the display
+            to the given path.
+        
+        y_trues : numpy.ndarray, default = None
+            If an array is given along with y_preds, the method will return
+            the confusion matrix for that values. Otherwise it will use
+            the values from training.
+        
+        y_preds : numpy.ndarray, default = None
+            If an array is given along with y_trues, the method will return
+            the confusion matrix for that values. Otherwise it will use
+            the values from training.
+        
+        """
+        if y_trues is None and y_preds is None:
+            ConfusionMatrixDisplay.from_predictions(
+                self.y_trues, self.y_preds, 
+                display_labels=global_variables.LABELS)
+        else:
+            ConfusionMatrixDisplay.from_predictions(
+                y_trues, y_preds, 
+                display_labels=global_variables.LABELS)
+        if filename is not None:
+            plt.savefig(filename, dpi=300)
+        plt.show()
+    
+    def predict(self, text):
+        """
+        Predict a given text.
+        
+        Parameters
+        ----------
+        
+        text : str
+            The text.
+        
+        Returns
+        -------
+        
+        prediction : str
+            An emotion for the prediction.
+        
+        """
+        text = self._vectorizer.transform([text])
+        prediction = self.classifier.predict(text)[0]
+        return global_variables.LABELS[prediction]
 
 class BERTEmotionClassifier(nn.Module):
     """
