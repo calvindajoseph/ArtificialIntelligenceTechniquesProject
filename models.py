@@ -544,7 +544,8 @@ class BERTEmotionModelReloaded():
             The directory of a .pth file.
         """
         self.set_model()
-        self._model.load_state_dict(torch.load(filename))
+        self._model.load_state_dict(
+            torch.load(filename, map_location=torch.device('cpu')))
     
     def predict(self, text):
         """
