@@ -1,11 +1,10 @@
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import Counter
 
 import global_variables
-from dataset import Dataset
+from dataset import TextDataset
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -16,9 +15,9 @@ plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300
 
 #%% Import dataset.
-dataset_train = Dataset(pd.read_csv('data/archive/training.csv'))
-dataset_test = Dataset(pd.read_csv('data/archive/test.csv'))
-dataset_validation = Dataset(pd.read_csv('data/archive/validation.csv'))
+dataset_train = TextDataset(pd.read_csv('data/archive/training.csv'))
+dataset_test = TextDataset(pd.read_csv('data/archive/test.csv'))
+dataset_validation = TextDataset(pd.read_csv('data/archive/validation.csv'))
 
 dataset_train.append_dataset(dataset_test)
 dataset_train.append_dataset(dataset_validation)
@@ -75,7 +74,7 @@ plt.show()
 def get_top_ngrams(df, n_gram, label, n=5):
     df = df[df['label'] == label].reset_index(drop=True)
     texts = [
-        word for text in Dataset(
+        word for text in TextDataset(
             data=df, n_gram=n_gram).get_texts('texts') for word in text]
     counter = Counter(texts)
     top_words = counter.most_common()[:n]
@@ -86,4 +85,18 @@ def get_top_ngrams(df, n_gram, label, n=5):
     df_top_word = pd.DataFrame(data=data)
     return df_top_word
 
-test = get_top_ngrams(df_data, 'unigram', 0)
+for label_index, label in enumerate(global_variables.LABEL_DESCRIPTION.keys()):
+    fig, axes = plt.subplots(3)
+    plt.tight_layout()
+    for n_gram_index, n_gram in enumerate(global_variables.N_GRAM_VALUES):
+        df_top_ngrams = get_top_ngrams(df_data, n_gram, label)
+        sns.barplot(
+            data=df_top_ngrams, x='word', y='count', 
+            ax=axes[n_gram_index])
+        axes[n_gram_index].set_title(
+            f'{global_variables.LABEL_DESCRIPTION[label]}_{n_gram}')
+        axes[n_gram_index].set_xlabel('')
+        axes[n_gram_index].set_ylabel('')
+    plt.savefig(
+        f'figures/{global_variables.LABEL_DESCRIPTION[label]}_topwords.png')
+    plt.show()
