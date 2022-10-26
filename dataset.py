@@ -425,8 +425,9 @@ class BERTDataLoaderManager():
     Parameters
     ----------
     
-    dataset : dataset.TextDataset
-        The text dataset, or just the training dataset.
+    dataset : dataset.TextDataset or str
+        The text dataset, or just the training dataset. If set to 'preset',
+        then it will import the preset split.
     
     test_size : float, default = 0.1
         The test size.
@@ -474,47 +475,136 @@ class BERTDataLoaderManager():
     """
     
     def __init__(
-            self, dataset : TextDataset, tokenizer, test_size=0.1, 
+            self, dataset, tokenizer, test_size=0.1, 
             val_size=0.1,
             dataset_test : TextDataset = None, 
             dataset_val : TextDataset = None):
         
-        if dataset_test is None and dataset_val is None:
-            texts = dataset.get_texts()
-            labels = dataset.get_labels()
+        if isinstance(dataset, TextDataset):
+            if dataset_test is None and dataset_val is None:
+                texts = dataset.get_texts()
+                labels = dataset.get_labels()
+                
+                split_one = test_size + val_size
+                split_two = val_size / split_one
+                
+                self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+                    texts, labels, test_size=split_one, stratify=labels, 
+                    random_state=global_variables.RANDOM_SEED)
+                self.X_test, self.X_val, self.y_test, self.y_val = train_test_split(
+                    self.X_test, self.y_test, test_size=split_two, stratify=self.y_test,
+                    random_state=global_variables.RANDOM_SEED)
+            else:
+                self.X_train = dataset.get_texts()
+                self.y_train = dataset.get_labels()
+                self.X_test = dataset_test.get_texts()
+                self.y_test = dataset_test.get_labels()
+                self.X_val = dataset_val.get_texts()
+                self.y_val = dataset_val.get_labels()
             
-            split_one = test_size + val_size
-            split_two = val_size / split_one
+            self.train_data_loader = self._create_data_loader(
+                self.X_train, self.y_train, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
             
-            self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-                texts, labels, test_size=split_one, stratify=labels, 
-                random_state=global_variables.RANDOM_SEED)
-            self.X_test, self.X_val, self.y_test, self.y_val = train_test_split(
-                self.X_test, self.y_test, test_size=split_two, stratify=self.y_test, 
-                random_state=global_variables.RANDOM_SEED)
-        else:
-            self.X_train = dataset.get_texts()
-            self.y_train = dataset.get_labels()
+            self.test_data_loader = self._create_data_loader(
+                self.X_test, self.y_test, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_EVALUATION)
+    
+            self.val_data_loader = self._create_data_loader(
+                self.X_val, self.y_val, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_EVALUATION)
+            
+            self.n_classes = 6
+        
+        elif dataset == 'preset':
+            dataset_train, dataset_test, dataset_validation = self._import_split()
+            
+            # Training.
+            self.X_train = dataset_train.get_texts()
+            self.y_train = dataset_train.get_labels()
+            self.train_data_loader = self._create_data_loader(
+                self.X_train, self.y_train, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            # Testing.
             self.X_test = dataset_test.get_texts()
             self.y_test = dataset_test.get_labels()
-            self.X_val = dataset_val.get_texts()
-            self.y_val = dataset_val.get_labels()
-        
-        self.train_data_loader = self._create_data_loader(
-            self.X_train, self.y_train, tokenizer, 
-            global_variables.MAX_LENGTH, 
-            global_variables.BATCH_SIZE_TRAIN)
-        
-        self.test_data_loader = self._create_data_loader(
-            self.X_test, self.y_test, tokenizer, 
-            global_variables.MAX_LENGTH, 
-            global_variables.BATCH_SIZE_EVALUATION)
-
-        self.val_data_loader = self._create_data_loader(
-            self.X_val, self.y_val, tokenizer, 
-            global_variables.MAX_LENGTH, 
-            global_variables.BATCH_SIZE_EVALUATION)
+            self.test_data_loader = self._create_data_loader(
+                self.X_test, self.y_test, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
             
+            # Training.
+            self.X_val = dataset_validation.get_texts()
+            self.y_val = dataset_validation.get_labels()
+            self.val_data_loader = self._create_data_loader(
+                self.X_val, self.y_val, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            self.n_classes = 6
+        
+        elif dataset == 'preset_binary_one':
+            dataset_train, dataset_test, dataset_validation = self._import_split_binary(1)
+            
+            # Training.
+            self.X_train = dataset_train.get_texts()
+            self.y_train = dataset_train.get_labels()
+            self.train_data_loader = self._create_data_loader(
+                self.X_train, self.y_train, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            # Testing.
+            self.X_test = dataset_test.get_texts()
+            self.y_test = dataset_test.get_labels()
+            self.test_data_loader = self._create_data_loader(
+                self.X_test, self.y_test, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            # Training.
+            self.X_val = dataset_validation.get_texts()
+            self.y_val = dataset_validation.get_labels()
+            self.val_data_loader = self._create_data_loader(
+                self.X_val, self.y_val, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            self.n_classes = 2
+        
+        elif dataset == 'preset_binary_two':
+            dataset_train, dataset_test, dataset_validation = self._import_split_binary(2)
+            
+            # Training.
+            self.X_train = dataset_train.get_texts()
+            self.y_train = dataset_train.get_labels()
+            self.train_data_loader = self._create_data_loader(
+                self.X_train, self.y_train, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            # Testing.
+            self.X_test = dataset_test.get_texts()
+            self.y_test = dataset_test.get_labels()
+            self.test_data_loader = self._create_data_loader(
+                self.X_test, self.y_test, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            # Training.
+            self.X_val = dataset_validation.get_texts()
+            self.y_val = dataset_validation.get_labels()
+            self.val_data_loader = self._create_data_loader(
+                self.X_val, self.y_val, tokenizer, 
+                global_variables.MAX_LENGTH, 
+                global_variables.BATCH_SIZE_TRAIN)
+            
+            self.n_classes = 2    
         
     def _create_data_loader(
             self, texts, labels, tokenizer, max_len, batch_size):
@@ -524,3 +614,47 @@ class BERTDataLoaderManager():
         dataset = BERTDataset(np.array(texts), labels, tokenizer)
         return DataLoader(dataset, batch_size=batch_size, num_workers=0)
     
+    def _import_split(self):
+        dataset_train = TextDataset(
+            pd.read_csv(global_variables.DIR_SPLIT_TRAIN))
+        dataset_test = TextDataset(
+            pd.read_csv(global_variables.DIR_SPLIT_TEST))
+        dataset_validation = TextDataset(
+            pd.read_csv(global_variables.DIR_SPLIT_VALIDATION))
+        return dataset_train, dataset_test, dataset_validation
+    
+    def _import_split_binary(self, index):
+        if index == 1:
+            dataset_train = TextDataset(
+                pd.read_csv(global_variables.DIR_SPLIT_BINARY1_TRAIN))
+            dataset_test = TextDataset(
+                pd.read_csv(global_variables.DIR_SPLIT_BINARY1_TEST))
+            dataset_validation = TextDataset(
+                pd.read_csv(global_variables.DIR_SPLIT_BINARY1_VALIDATION))
+            return dataset_train, dataset_test, dataset_validation
+        elif index == 2:
+            dataset_train = TextDataset(
+                pd.read_csv(global_variables.DIR_SPLIT_BINARY2_TRAIN))
+            dataset_test = TextDataset(
+                pd.read_csv(global_variables.DIR_SPLIT_BINARY2_TEST))
+            dataset_validation = TextDataset(
+                pd.read_csv(global_variables.DIR_SPLIT_BINARY2_VALIDATION))
+            return dataset_train, dataset_test, dataset_validation
+    
+class CustomPytorchDataset(Dataset):
+    
+    def __init__(self, dataframe, feature_names, target):
+        X_data = dataframe[feature_names].values
+        y_data = dataframe[target].values
+        
+        self.X_data = torch.tensor(X_data, dtype = torch.float)
+        self.y_data = torch.tensor(y_data, dtype = torch.float)
+    
+    def __len__(self):
+        return len(self.X_data)
+    
+    def __getitem__(self, index):
+        return {
+            'data' : self.X_data[index],
+            'target' : torch.tensor(self.y_data[index][0], dtype=torch.long)
+        }

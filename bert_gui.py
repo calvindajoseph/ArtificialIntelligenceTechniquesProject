@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import global_variables
-from models import BERTEmotionModelReloaded
+from models import BERTEmotionModelStackedReloaded
 
 class MainApp(tk.Tk):
     
@@ -48,8 +48,9 @@ class MainApp(tk.Tk):
             row=4, column=0, columnspan=2, padx=5, sticky='nswe')
         
         # Get the model.
-        self.model = BERTEmotionModelReloaded(
-            global_variables.DIR_FINAL_MODEL_BERT)
+        self.model = BERTEmotionModelStackedReloaded(
+            global_variables.DIR_FINAL_MODEL_BERT, 
+            global_variables.DIR_FINAL_MODEL_BERT_BINARY)
         
     def classify_text(self):
         text = self.entry.get()
@@ -63,7 +64,7 @@ class MainApp(tk.Tk):
         
         text = f'Text : {text}'
         emotion = f'Emotion : {emotion}'
-        confidence = f'Confidence : {confidence_value}'
+        confidence = f'Confidence in the main BERT : {confidence_value}'
         
         self.result_text.configure(text=text, anchor='w')
         self.result_emotion.configure(text=emotion, anchor='w')
